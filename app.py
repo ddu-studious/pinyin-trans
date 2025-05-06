@@ -1,12 +1,14 @@
 from flask import Flask, request, send_from_directory, render_template, jsonify
-from gtts import gTTS
 import os
 
-# 从独立文件中导入拼音映射
-from pinyin_map import pinyin_to_hanzi
+# 导入 TTS 策略模块
+from tts_strategies import DEFAULT_TTS_STRATEGY
 
 app = Flask(__name__)
 AUDIO_DIR = 'static/audio'
+
+# 从独立文件中导入拼音映射
+from pinyin_map import pinyin_to_hanzi
 
 @app.route('/')
 def index():
@@ -20,8 +22,8 @@ def get_audio():
     audio_path = os.path.join(AUDIO_DIR, audio_file)
 
     if not os.path.exists(audio_path):
-        tts = gTTS(text=hanzi, lang='zh-cn')
-        tts.save(audio_path)
+        # 使用策略模式生成音频
+        DEFAULT_TTS_STRATEGY.text_to_speech(text=hanzi, lang='zh-cn', output_path=audio_path)
 
     audio_url = f'/audio/{audio_file}'
     return jsonify({'audio_url': audio_url})  # 返回 JSON 格式

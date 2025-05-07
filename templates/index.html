@@ -21,7 +21,7 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
             padding: 40px;
             width: 90%;
-            max-width: 600px;
+            max-width: 800px;
             text-align: center;
             position: relative;
         }
@@ -39,6 +39,7 @@
             justify-content: center;
             gap: 10px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
         input[type="text"] {
@@ -56,19 +57,37 @@
             box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
         }
 
+        select, button {
+            padding: 12px 16px;
+            font-size: 16px;
+            border-radius: 10px;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        select {
+            margin-right: 10px;
+        }
+
         button {
             background-color: #007BFF;
             color: white;
             border: none;
-            padding: 12px 20px;
-            font-size: 16px;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
+            flex-shrink: 0;
         }
 
         button:hover {
             background-color: #0056b3;
+        }
+
+        .secondary-button {
+            background-color: #6c757d;
+            margin-left: 10px;
+        }
+
+        .secondary-button:hover {
+            background-color: #5a6268;
         }
 
         audio {
@@ -100,22 +119,38 @@
         <h1>输入拼音获取发音</h1>
         <div class="input-container">
             <input type="text" id="pinyinInput" placeholder="请输入拼音（如：shui）">
-            <button onclick="getAudio()">播放</button>
+            <select id="ttsSelector">
+                <option value="gtts">🌐 gTTS（在线，中文基础）</option>
+                <!-- 如果是 macOS 平台，可取消注释以下选项 -->
+                <option value="macsay">🗣️ macOS 原生语音（本地，中文稳定）</option>
+                <option value="edgetts">🤖 Edge-TTS（微软云端，中文自然）</option>
+            </select>
+            <button onclick="getAudio()">生成并播放</button>
+            <button class="secondary-button" onclick="playLastAudio()">播放上次音频</button>
         </div>
         <audio id="audioPlayer" controls></audio>
     </div>
 
     <script>
+        let currentTTS = 'gtts'; // 默认使用 gtts
+
+        function updateTTSInfo() {
+            currentTTS = document.getElementById('ttsSelector').value;
+            console.log(`当前选择的 TTS 引擎: ${currentTTS}`); // 添加调试信息
+        }
+
         function getAudio() {
             const pinyin = document.getElementById('pinyinInput').value.trim();
             if (!pinyin) return alert('请输入拼音！');
 
+            // 使用正确的文件扩展名（macsay 返回 .caf）
+            const ext = currentTTS === 'macsay' ? '.caf' : '.mp3';
             fetch('/get_audio', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: 'pinyin=' + encodeURIComponent(pinyin)
+                body: `pinyin=${encodeURIComponent(pinyin)}&tts=${encodeURIComponent(currentTTS)}`
             })
             .then(response => response.json())
             .then(data => {
@@ -128,6 +163,36 @@
                 alert('音频加载失败，请重试。');
             });
         }
+
+        function playLastAudio() {
+            fetch('/play_last_audio')
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                    return;
+                }
+                const audioPlayer = document.getElementById('audioPlayer');
+                const url = data.audio_url || '';
+                // 自动识别 .caf 或 .mp3
+                audioPlayer.src = url;
+                audioPlayer.play();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('没有可播放的音频！');
+            });
+        }
+
+        // 页面加载完成后同步 currentTTS 和下拉菜单
+        window.addEventListener('DOMContentLoaded', () => {
+            const selector = document.getElementById('ttsSelector');
+            if (selector) {
+                selector.value = currentTTS;
+                selector.addEventListener('change', updateTTSInfo);
+                console.log('TTS 下拉菜单已初始化');
+            }
+        });
     </script>
 </body>
 </html>

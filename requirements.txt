@@ -1,2 +1,5 @@
 Flask==2.3.2
 gTTS==2.3.1
+edge-tts
+requests  # 用于调用远程服务（如果保留其他远程 TTS）
+# paddlespeech 和 numpy 版本限制已移除

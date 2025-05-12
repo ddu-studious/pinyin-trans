@@ -8,22 +8,46 @@ import asyncio
 # 全局定义音频目录
 AUDIO_DIR = 'static/audio'
 
+# 定义默认TTS策略
+DEFAULT_TTS_STRATEGY = 'gtts'  # 设置默认TTS策略为gtts
+
 # 确保音频目录存在
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
 def get_current_user():
     return pwd.getpwuid(os.getuid()).pw_name
 
+# 创建日志过滤器来拦截unknown模型日志
+class ModelLogFilter(logging.Filter):
+    def filter(self, record):
+        # 增强调试信息输出
+        if getattr(record, 'model', None) == 'unknown':
+            print(f"[DEBUG] 阻止打印unknown日志，来源: {record.name}:{record.lineno}")
+            return False
+        return True
+
 # 设置日志格式
 class TTSLogFormatter(logging.Formatter):
     def format(self, record):
+        # 强制移除所有'model'属性并设置默认值
         if not hasattr(record, 'model'):
             record.model = 'unknown'
-        return super().format(record)
+        
+        # 清理特殊属性防止格式化错误
+        if record.model == 'unknown':
+            record.model = ''  # 设置为空字符串避免显示
+        
+        try:
+            return super().format(record)
+        except ValueError as e:
+            if 'model' in str(e):
+                return record.getMessage()
+            raise
 
 formatter = TTSLogFormatter('[%(asctime)s] 使用模型: %(model)s')
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
+handler.addFilter(ModelLogFilter())  # 添加过滤器
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -67,6 +91,10 @@ def create_app():
         
         # 获取用户选择的 TTS 引擎，默认为 gtts
         tts_engine = request.form.get('tts', 'gtts').lower()
+        
+        # 显式设置当前模型名称
+        model_name = tts_engine if tts_engine != 'unknown' else 'gtts'
+        
         strategy = tts_strategies.get(tts_engine, DEFAULT_TTS_STRATEGY)
         
         # 修改音频文件扩展名为 .wav（macsay 使用 wav 格式）
@@ -120,14 +148,61 @@ def create_app():
 
     return app
 
+# 创建Flask应用实例（必须在日志配置之前）
+app = Flask(__name__)
+
+# 配置日志系统
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 创建控制台处理器并设置级别
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# 创建格式化器并应用过滤器
+formatter = TTSLogFormatter('[%(asctime)s] 使用模型: %(model)s')
+console_handler.setFormatter(formatter)
+console_handler.addFilter(ModelLogFilter())
+
+# 添加处理器到记录器
+logger.addHandler(console_handler)
+
+# 将Flask日志与自定义配置整合
+werkzeug_logger = logging.getLogger('werkzeug')
+werkzeug_logger.disabled = True
+app.logger = logger  # 将Flask内置日志替换为自定义配置
+
 # 添加调试信息
 print(f"当前运行用户: {get_current_user()}")
 print(f"当前工作目录: {os.getcwd()}")
 print(f"音频输出目录: {AUDIO_DIR}")
 print(f"音频输出目录状态: {'可写' if os.access(AUDIO_DIR, os.W_OK) else '不可写'}")
 
-# 创建 Flask 应用实例
-app = create_app()
+# 设置全局日志级别为DEBUG
+logging.basicConfig(level=logging.DEBUG)
+
+# 完全禁用werkzeug日志
+logging.getLogger('werkzeug').disabled = True
+
+# 完全重构日志系统配置
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# 创建控制台处理器并设置级别
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# 创建格式化器并应用过滤器
+formatter = TTSLogFormatter('[%(asctime)s] 使用模型: %(model)s')
+console_handler.setFormatter(formatter)
+console_handler.addFilter(ModelLogFilter())
+
+# 添加处理器到记录器
+logger.addHandler(console_handler)
+
+# 替换全局日志配置
+logging.getLogger().handlers = [console_handler]
+logging.getLogger().setLevel(logging.INFO)
 
 # 导入拼音映射
 from pinyin_map import pinyin_to_hanzi
@@ -139,7 +214,8 @@ class TTSLogFormatter(logging.Formatter):
             record.model = 'unknown'
         return super().format(record)
 
-formatter = TTSLogFormatter('[%(asctime)s] 使用模型: %(model)s')
+# 临时修改日志格式包含更多调试信息
+formatter = TTSLogFormatter('[%(asctime)s] 使用模型: %(model)s [%(name)s:%(lineno)d]')
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 
@@ -147,10 +223,16 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(handler)
 
+# 确保所有日志记录器都应用过滤器
+for handler in logging.getLogger().handlers:
+    handler.addFilter(ModelLogFilter())
+
 # 可选：写入日志文件
 # file_handler = logging.FileHandler('tts_usage.log')
 # file_handler.setFormatter(formatter)
 # logger.addHandler(file_handler)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # 确保应用实例正确运行
+    app_instance = create_app()
+    app_instance.run(debug=True, port=5000)

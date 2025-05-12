@@ -2,7 +2,7 @@ Flask==2.3.2
 Flask[async]==2.3.2  # 支持异步路由
 gTTS==2.3.1
 edge-tts==7.0.2  # 精确指定版本以提高稳定性
-paddlespeech==1.4.1
+paddlespeech==1.4.1 
 numpy==1.21.5
 scipy==1.7.3
 requests

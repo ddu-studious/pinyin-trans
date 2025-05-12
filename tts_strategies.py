@@ -2,6 +2,7 @@ import os
 import subprocess
 import asyncio
 from gtts import gTTS
+import edge_tts  # 新增导入 Microsoft Edge TTS 库
 
 class TTSStrategy:
     """
@@ -69,12 +70,27 @@ class MacSayStrategy(TTSStrategy):
 
 class EdgeTTSStrategy(TTSStrategy):
     """
-    使用 Microsoft Edge TTS 的异步策略实现。
+    使用 Microsoft Edge TTS 的策略实现
     """
+
+    def __init__(self, voice='zh-CN-XiaoxiaoNeural'):
+        self.voice = voice
+
     async def text_to_speech(self, text: str, lang: str, output_path: str):
-        communicate = edge_tts.Communicate(text, voice="zh-CN-YanpingNeural")
-        await communicate.save(output_path)
-        return output_path
+        try:
+            from edge_tts import Communicate
+            print(f"[EdgeTTSStrategy] 正在尝试合成语音: 文本='{text}', 语言='{lang}', 输出路径='{output_path}'")  # 添加详细调试信息
+            
+            if not text or text.strip() == "":
+                raise ValueError("文本内容为空，无法合成语音")
+
+            communicate = Communicate(text=text, voice=self.voice)
+            await communicate.save(output_path)
+            print(f"[EdgeTTSStrategy] 音频文件已成功保存到: {output_path}")  # 添加成功保存提示
+            return output_path
+        except Exception as e:
+            print(f"[EdgeTTSStrategy] 合成失败: {str(e)}")  # 更清晰的错误输出
+            raise
 
     @property
     def name(self):

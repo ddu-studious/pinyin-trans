@@ -1,5 +1,9 @@
 Flask==2.3.2
+Flask[async]==2.3.2  # 支持异步路由
 gTTS==2.3.1
-edge-tts
-requests  # 用于调用远程服务（如果保留其他远程 TTS）
-# paddlespeech 和 numpy 版本限制已移除
+edge-tts==7.0.2  # 精确指定版本以提高稳定性
+paddlespeech==1.4.1
+numpy==1.21.5
+scipy==1.7.3
+requests
+librosa  # Edge-TTS 可能依赖的音频处理库

@@ -2,8 +2,14 @@ Flask==2.3.2
 Flask[async]==2.3.2  # 支持异步路由
 gTTS==2.3.1
 edge-tts==7.0.2  # 精确指定版本以提高稳定性
-paddlespeech==1.4.1 
-numpy==1.21.5
-scipy==1.7.3
+paddlepaddle==2.5.1  # 使用CPU版本以兼容paddlespeech 1.4.2
+paddlespeech==1.4.0  # 使用兼容CPU的版本
+numpy==1.23.5  # 更新版本以兼容paddlespeech 1.4.2
+scipy==1.10.1
 requests
 librosa  # Edge-TTS 可能依赖的音频处理库
+
+# 注意：为避免PaddleSpeech自动下载模型，需要设置以下环境变量：
+# export PRETRAINED_MODELS_HOME=/path/to/models/directory
+# export PPNLP_HOME=$PRETRAINED_MODELS_HOME
+# export PADDLESPEECH_HOME=$PRETRAINED_MODELS_HOME

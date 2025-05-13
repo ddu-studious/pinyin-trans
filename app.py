@@ -59,30 +59,60 @@ def create_app():
     global AUDIO_DIR
 
     # 导入 TTS 策略模块
-    from tts_strategies import GTTSStrategy, MacSayStrategy, EdgeTTSStrategy
-
-    # 创建 TTS 策略实例
     try:
+        from tts_strategies import DEFAULT_TTS_STRATEGY, MacSayStrategy, EdgeTTSStrategy, PaddleSpeechStrategy
+    
+        # 注册所有可用的 TTS 策略
         tts_strategies = {
-            'gtts': GTTSStrategy(),
-            'macsay': MacSayStrategy(),
-            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural')  # 使用有效的中文语音模型
+            'gtts': DEFAULT_TTS_STRATEGY,
         }
+
+        # 自动检测平台并注册合适的 TTS 引擎
+        if platform.system() == 'Darwin':
+            tts_strategies['macsay'] = MacSayStrategy()
+
+        try:
+            tts_strategies['edgetts'] = EdgeTTSStrategy()
+        except ImportError:
+            pass
+
+        try:
+            # 尝试导入并注册PaddleSpeech策略
+            tts_strategies['paddlespeech'] = PaddleSpeechStrategy()
+        except ImportError as e:
+            print(f"PaddleSpeech加载失败: {str(e)}")
+            pass
+
     except Exception as e:
-        print(f"初始化 TTS 策略时出错: {str(e)}")
-        tts_strategies = {
-            'gtts': GTTSStrategy(),
-            'macsay': MacSayStrategy(),
-            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural')  # 使用默认中文语音模型
-        }
+        print(f"TTS策略加载异常: {str(e)}")
+        tts_strategies = {'gtts': GTTSStrategy()}  # 降级使用gTTS
 
     # 记录上一次生成的音频文件
     last_audio_url = None
 
     @app.route('/')
     def index():
+        """
+        根路径访问：返回主界面
+        """
+        print("当前工作目录:", os.getcwd())
+        print("模板文件路径:", os.path.abspath('templates/index.html'))
         return render_template('index.html')
 
+    @app.route('/test')
+    def test():
+        """
+        路由测试接口
+        """
+        return "路由测试成功", 200
+
+    @app.route('/engines')
+    def get_engines():
+        """
+        获取可用的TTS引擎列表
+        """
+        return jsonify(list(tts_strategies.keys()))  # 强制返回 JSON 格式
+        
     @app.route('/get_audio', methods=['POST'])
     async def get_audio():
         global last_audio_url
@@ -91,10 +121,6 @@ def create_app():
         
         # 获取用户选择的 TTS 引擎，默认为 gtts
         tts_engine = request.form.get('tts', 'gtts').lower()
-        
-        # 显式设置当前模型名称
-        model_name = tts_engine if tts_engine != 'unknown' else 'gtts'
-        
         strategy = tts_strategies.get(tts_engine, DEFAULT_TTS_STRATEGY)
         
         # 修改音频文件扩展名为 .wav（macsay 使用 wav 格式）
@@ -102,6 +128,8 @@ def create_app():
             audio_file = f'{pinyin}.wav'
         elif tts_engine == 'edgetts':
             audio_file = f'{pinyin}.mp3'  # Edge-TTS 默认输出 mp3
+        elif tts_engine == 'paddlespeech':
+            audio_file = f'{pinyin}.wav'  # PaddleSpeech 默认输出 wav
         else:
             audio_file = f'{pinyin}.mp3'  # 默认使用 mp3
 
@@ -127,7 +155,7 @@ def create_app():
         model_name = getattr(strategy, 'name', tts_engine)
         logger.info(f'请求生成音频: {pinyin} -> {model_name}', extra={'model': model_name})
 
-        return jsonify({'audio_url': audio_url})  # 返回 JSON 格式
+        return jsonify({"audio_url": audio_url})  # 确保始终返回 JSON 格式
 
     @app.route('/play_last_audio')
     def play_last_audio():
@@ -148,8 +176,18 @@ def create_app():
 
     return app
 
-# 创建Flask应用实例（必须在日志配置之前）
+# 创建 Flask 应用
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
+
+# 显式启用所有路由
+print("当前注册的所有路由:", list(app.view_functions.keys()))
+
+# 初始化 TTS 策略（从 tts_strategies 导入）
+from tts_strategies import init_tts_strategies
+init_tts_strategies(app)
+
+# 注册蓝图
 
 # 配置日志系统
 logger = logging.getLogger(__name__)
@@ -233,6 +271,4 @@ for handler in logging.getLogger().handlers:
 # logger.addHandler(file_handler)
 
 if __name__ == '__main__':
-    # 确保应用实例正确运行
-    app_instance = create_app()
-    app_instance.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)  # 修改端口为 5001

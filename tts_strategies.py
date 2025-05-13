@@ -3,6 +3,36 @@ import subprocess
 import asyncio
 from gtts import gTTS
 import edge_tts  # 新增导入 Microsoft Edge TTS 库
+import logging  # 确保日志模块可用
+from logging import Filter
+import nltk
+import ssl
+
+# 解决 NLTK SSL 证书验证失败问题
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+# 下载 NLTK 数据（使用本地证书）
+try:
+    nltk.data.find('tokenizers/punkt')
+    nltk.data.find('taggers/averaged_perceptron_tagger')
+    nltk.data.find('corpora/cmudict')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+    nltk.download('averaged_perceptron_tagger', quiet=True)
+    nltk.download('cmudict', quiet=True)
+
+
+class ModelLogFilter(Filter):
+    """自定义日志过滤器，拦截unknown模型日志"""
+    def filter(self, record):
+        if getattr(record, 'model', None) == 'unknown':
+            return False
+        return True
 
 class TTSStrategy:
     """
@@ -95,6 +125,103 @@ class EdgeTTSStrategy(TTSStrategy):
     @property
     def name(self):
         return 'edgetts'  # 提供模型名称用于日志
+
+# 新增PaddleSpeech支持
+try:
+    import paddle
+    from paddlespeech.cli.tts.infer import TTSExecutor
+    from paddlespeech.t2s.models.transformer_tts import TransformerTTSExecutor
+    
+    class PaddleSpeechStrategy(TTSStrategy):
+        """
+        使用百度PaddleSpeech的本地TTS策略
+        """
+        def __init__(self, voice='zh-CN', model='fastspeech2'):
+            self.tts_executor = TTSExecutor()
+            self.voice = voice
+            self.model = model
+            
+        def text_to_speech(self, text: str, lang: str, output_path: str):
+            # 自动调整语言设置
+            actual_lang = lang if lang.startswith('zh') else 'en-US'
+            
+            # 执行语音合成
+            self.tts_executor(
+                text=text,
+                output=output_path,
+                am=self.model,  # 使用指定的模型
+                spk_id=0,
+                lang=actual_lang,
+                speed=1.0,
+                volume=1.0,
+                sample_rate=24000,
+                save_audio=True,
+                save_endpoint=None
+            )
+            return output_path
+            
+        @property
+        def name(self):
+            return 'paddlespeech'
+            
+except ImportError as e:
+    if 'paddlespeech' in str(e):
+        class PaddleSpeechStrategy(TTSStrategy):
+            """
+            占位类，当PaddleSpeech未安装时返回提示
+            """
+            def text_to_speech(self, text: str, lang: str, output_path: str):
+                raise NotImplementedError(
+                    "PaddleSpeech未安装，请先运行: pip install paddlepaddle paddlespeech")
+    else:
+        raise
+
+def setup_logger_filters():
+    """
+    配置日志过滤器以控制输出
+    """
+    # 获取根日志记录器
+    root_logger = logging.getLogger()
+    
+    # 为所有处理器添加模型过滤器
+    for handler in root_logger.handlers:
+        handler.addFilter(ModelLogFilter())
+        
+    # 设置日志级别
+    root_logger.setLevel(logging.INFO)
+    return True
+
+# 初始化TTS策略（保持原有函数定义）
+def init_tts_strategies(app):
+    """
+    初始化所有TTS策略
+    """
+    global tts_strategies, DEFAULT_TTS_STRATEGY
+    
+    # 初始化策略字典
+    tts_strategies = {
+        'gtts': GTTSStrategy(),
+        'macsay': MacSayStrategy(),
+        'edgetts': EdgeTTSStrategy()
+    }
+    
+    # 尝试加载PaddleSpeech支持
+    try:
+        from paddlespeech_strategies import PaddleSpeechStrategy
+        tts_strategies['paddlespeech'] = PaddleSpeechStrategy()
+    except (ImportError, NotImplementedError) as e:
+        print("PaddleSpeech不可用:", str(e))
+        
+    # 设置默认策略
+    DEFAULT_TTS_STRATEGY = tts_strategies.get('gtts', GTTSStrategy())
+    
+    # 注册日志过滤器
+    try:
+        setup_logger_filters()
+    except Exception as e:
+        print("日志过滤器初始化失败:", str(e))
+    
+    return True
 
 # 默认策略设置为 gTTS
 DEFAULT_TTS_STRATEGY = GTTSStrategy()

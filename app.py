@@ -8,9 +8,6 @@ import asyncio
 # 全局定义音频目录
 AUDIO_DIR = 'static/audio'
 
-# 定义默认TTS策略
-DEFAULT_TTS_STRATEGY = 'gtts'  # 设置默认TTS策略为gtts
-
 # 确保音频目录存在
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
@@ -53,57 +50,41 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.addHandler(handler)
 
-
 def create_app():
     app = Flask(__name__)
     global AUDIO_DIR
 
     # 导入 TTS 策略模块
-    from tts_strategies import GTTSStrategy, MacSayStrategy, EdgeTTSStrategy, PaddleSpeechTTSStrategy  # 添加PaddleSpeech策略
+    from tts_strategies import (
+        GTTSStrategy, 
+        MacSayStrategy, 
+        EdgeTTSStrategy, 
+        DockerPaddleSpeechStrategy,
+        get_default_strategy
+    )
 
     # 创建 TTS 策略实例
     try:
-        # 设置 PaddleSpeech 模型路径（如果环境变量未设置）
-        paddlespeech_model_path = os.getenv('PADDLE_SPEECH_MODEL_PATH', os.path.join(os.getcwd(), 'models/paddlespeech/G2PWModel_1.1.zip'))  # 使用下载的G2P模型
-        
         # 初始化基本策略
         tts_strategies = {
             'gtts': GTTSStrategy(),
             'macsay': MacSayStrategy(),
-            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural')  # 使用有效的中文语音模型
+            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural'),
+            'paddlespeech': DockerPaddleSpeechStrategy(audio_format='wav')  # 默认使用 wav 格式
         }
         
-        # 尝试初始化PaddleSpeech策略
-        try:
-            # 检查NumPy版本
-            import numpy as np
-            from packaging import version
-            numpy_version = np.__version__
-            print(f"当前NumPy版本: {numpy_version}")
-            
-            # 设置环境变量，确保使用本地模型而不是下载
-            os.environ['PRETRAINED_MODELS_HOME'] = '/Users/liuqingwen/Firm/Private/work-space/ai-coding/pinyin-reading-companion/models'
-            os.environ['PPNLP_HOME'] = os.environ['PRETRAINED_MODELS_HOME']
-            os.environ['PADDLESPEECH_HOME'] = os.environ['PRETRAINED_MODELS_HOME']
-            
-            print(f"设置PaddleSpeech模型目录: {os.environ['PRETRAINED_MODELS_HOME']}")
-            print(f"本地模型路径: {paddlespeech_model_path}")
-            print(f"模型文件存在: {os.path.exists(paddlespeech_model_path)}")
-            
-            # 尝试添加PaddleSpeech策略
-            paddlespeech_strategy = PaddleSpeechTTSStrategy(model_path=paddlespeech_model_path)
-            tts_strategies['paddlespeech'] = paddlespeech_strategy
-            print("PaddleSpeech策略初始化成功")
-        except Exception as paddle_error:
-            print(f"PaddleSpeech策略初始化失败: {str(paddle_error)}")
-            print("将使用其他TTS引擎作为替代")
+        # 设置默认策略
+        default_strategy = get_default_strategy()
+        print(f"使用默认TTS策略: {default_strategy.name}")
+        
     except Exception as e:
         print(f"初始化 TTS 策略时出错: {str(e)}")
         tts_strategies = {
             'gtts': GTTSStrategy(),
             'macsay': MacSayStrategy(),
-            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural')  # 使用默认中文语音模型
+            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural')
         }
+        default_strategy = GTTSStrategy()
 
     # 记录上一次生成的音频文件
     last_audio_url = None
@@ -118,19 +99,23 @@ def create_app():
         pinyin = request.form['pinyin']
         hanzi = pinyin_to_hanzi.get(pinyin, pinyin)
         
-        # 获取用户选择的 TTS 引擎，默认为 gtts
-        tts_engine = request.form.get('tts', 'gtts').lower()
+        # 获取用户选择的 TTS 引擎，默认为系统默认策略
+        tts_engine = request.form.get('tts', default_strategy.name).lower()
         
         # 显式设置当前模型名称
-        model_name = tts_engine if tts_engine != 'unknown' else 'gtts'
+        model_name = tts_engine if tts_engine != 'unknown' else default_strategy.name
         
-        strategy = tts_strategies.get(tts_engine, DEFAULT_TTS_STRATEGY)
+        strategy = tts_strategies.get(tts_engine, default_strategy)
         
-        # 修改音频文件扩展名为 .wav（macsay 使用 wav 格式）
+        # 根据不同的 TTS 引擎选择音频格式
         if tts_engine == 'macsay':
             audio_file = f'{pinyin}.wav'
         elif tts_engine == 'edgetts':
             audio_file = f'{pinyin}.mp3'  # Edge-TTS 默认输出 mp3
+        elif tts_engine == 'paddlespeech':
+            # 使用 PaddleSpeech 策略中设置的格式
+            audio_format = getattr(strategy, 'audio_format', 'wav')
+            audio_file = f'{pinyin}.{audio_format}'
         else:
             audio_file = f'{pinyin}.mp3'  # 默认使用 mp3
 
@@ -141,10 +126,9 @@ def create_app():
             try:
                 model_name = getattr(strategy, 'name', tts_engine)
                 print(f"正在使用 {model_name} 合成语音: '{hanzi}'")  # 添加调试信息
-                if asyncio.iscoroutinefunction(strategy.text_to_speech):
-                    await strategy.text_to_speech(text=hanzi, lang='zh-cn', output_path=audio_path)
-                else:
-                    strategy.text_to_speech(text=hanzi, lang='zh-cn', output_path=audio_path)
+                success = await strategy.text_to_speech(text=hanzi, lang='zh-cn', output_path=audio_path)
+                if not success:
+                    raise Exception("语音合成失败")
             except Exception as e:
                 print(f"音频合成错误: {str(e)}")
                 return jsonify({'error': f'音频合成失败: {str(e)}'}), 500
@@ -255,11 +239,6 @@ logger.addHandler(handler)
 # 确保所有日志记录器都应用过滤器
 for handler in logging.getLogger().handlers:
     handler.addFilter(ModelLogFilter())
-
-# 可选：写入日志文件
-# file_handler = logging.FileHandler('tts_usage.log')
-# file_handler.setFormatter(formatter)
-# logger.addHandler(file_handler)
 
 if __name__ == '__main__':
     # 确保应用实例正确运行

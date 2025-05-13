@@ -63,11 +63,13 @@ def create_app():
 
     # 创建 TTS 策略实例
     try:
+        # 设置 PaddleSpeech 模型路径（如果环境变量未设置）
+        paddlespeech_model_path = os.getenv('PADDLE_SPEECH_MODEL_PATH', '/path/to/your/model')  # 修改为实际模型路径
         tts_strategies = {
             'gtts': GTTSStrategy(),
             'macsay': MacSayStrategy(),
             'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural'),  # 使用有效的中文语音模型
-            'paddlespeech': PaddleSpeechTTSStrategy()  # 添加PaddleSpeech策略实例
+            'paddlespeech': PaddleSpeechTTSStrategy(model_path=paddlespeech_model_path)  # 传递模型路径
         }
     except Exception as e:
         print(f"初始化 TTS 策略时出错: {str(e)}")

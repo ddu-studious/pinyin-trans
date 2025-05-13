@@ -115,12 +115,16 @@ class PaddleSpeechTTSStrategy(TTSStrategy):
             self._initialized = True
         except Exception as e:
             print(f"[PaddleSpeech] 初始化失败: {str(e)}")
+            self._model = None  # 明确设置为 None
 
     def text_to_speech(self, text: str, lang: str, output_path: str):
         if not self._initialized:
             self._initialize_model()
             
         try:
+            if self._model is None:
+                raise RuntimeError("PaddleSpeech 模型初始化失败")
+
             # 使用 PaddleSpeech 进行语音合成
             audio, sample_rate = self._model(text=text, lang=lang, am=self.voice)
             # 将音频数据保存到文件

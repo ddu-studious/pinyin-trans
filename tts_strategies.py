@@ -96,5 +96,45 @@ class EdgeTTSStrategy(TTSStrategy):
     def name(self):
         return 'edgetts'  # 提供模型名称用于日志
 
+class PaddleSpeechTTSStrategy(TTSStrategy):
+    """
+    使用 PaddleSpeech 的策略实现
+    """
+    def __init__(self, voice='zh-CN', model_path=None):
+        self.voice = voice
+        self.model_path = model_path if model_path else os.getenv('PADDLE_SPEECH_MODEL_PATH')
+        self._initialized = False
+        self._model = None
+        
+    def _initialize_model(self):
+        """延迟加载模型以提高启动速度"""
+        try:
+            from paddlespeech.tts import TTSExecutor  # 导入 PaddleSpeech TTSExecutor
+            self._model = TTSExecutor()
+            print("[PaddleSpeech] 模型初始化成功")
+            self._initialized = True
+        except Exception as e:
+            print(f"[PaddleSpeech] 初始化失败: {str(e)}")
+
+    def text_to_speech(self, text: str, lang: str, output_path: str):
+        if not self._initialized:
+            self._initialize_model()
+            
+        try:
+            # 使用 PaddleSpeech 进行语音合成
+            audio, sample_rate = self._model(text=text, lang=lang, am=self.voice)
+            # 将音频数据保存到文件
+            import soundfile as sf  # 导入 soundfile 库来保存音频文件
+            sf.write(output_path, audio, sample_rate)
+            print(f"[PaddleSpeech] 音频文件已成功保存到: {output_path}")
+            return output_path
+        except Exception as e:
+            print(f"[PaddleSpeech] 合成失败: {str(e)}")
+            raise
+
+    @property
+    def name(self):
+        return 'paddlespeech'  # 提供模型名称用于日志
+
 # 默认策略设置为 gTTS
 DEFAULT_TTS_STRATEGY = GTTSStrategy()

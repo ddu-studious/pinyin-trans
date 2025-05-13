@@ -59,14 +59,15 @@ def create_app():
     global AUDIO_DIR
 
     # 导入 TTS 策略模块
-    from tts_strategies import GTTSStrategy, MacSayStrategy, EdgeTTSStrategy
+    from tts_strategies import GTTSStrategy, MacSayStrategy, EdgeTTSStrategy, PaddleSpeechTTSStrategy  # 添加PaddleSpeech策略
 
     # 创建 TTS 策略实例
     try:
         tts_strategies = {
             'gtts': GTTSStrategy(),
             'macsay': MacSayStrategy(),
-            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural')  # 使用有效的中文语音模型
+            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural'),  # 使用有效的中文语音模型
+            'paddlespeech': PaddleSpeechTTSStrategy()  # 添加PaddleSpeech策略实例
         }
     except Exception as e:
         print(f"初始化 TTS 策略时出错: {str(e)}")

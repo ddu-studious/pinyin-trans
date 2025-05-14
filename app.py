@@ -1,4 +1,4 @@
-from flask import Flask, request, send_from_directory, render_template, jsonify
+from flask import Flask, request, send_from_directory, render_template, jsonify, send_file
 import os
 import platform
 import logging
@@ -158,6 +158,51 @@ def create_app():
         model_name = filename.split('_')[0] if '_' in filename else 'unknown'
         logger.info(f'播放音频: {filename}', extra={'model': model_name})
         return send_from_directory(AUDIO_DIR, filename)
+
+    @app.route('/stream_audio', methods=['POST'])
+    async def stream_audio():
+        global last_audio_url
+        pinyin = request.form['pinyin']
+        hanzi = pinyin_to_hanzi.get(pinyin, pinyin)
+        
+        # 获取用户选择的 TTS 引擎
+        tts_engine = request.form.get('tts', default_strategy.name).lower()
+        strategy = tts_strategies.get(tts_engine, default_strategy)
+        
+        try:
+            # 根据不同的 TTS 引擎选择音频格式
+            if tts_engine == 'macsay':
+                audio_file = f'{pinyin}.wav'
+            elif tts_engine == 'edgetts':
+                audio_file = f'{pinyin}.mp3'  # Edge-TTS 默认输出 mp3
+            elif tts_engine == 'paddlespeech':
+                # 使用 PaddleSpeech 策略中设置的格式
+                audio_format = getattr(strategy, 'audio_format', 'wav')
+                audio_file = f'{pinyin}.{audio_format}'
+            else:
+                audio_file = f'{pinyin}.mp3'  # 默认使用 mp3
+
+            audio_path = os.path.join(AUDIO_DIR, audio_file)
+            
+            # 生成音频
+            success = await strategy.text_to_speech(text=hanzi, lang='zh-cn', output_path=audio_path)
+            if not success:
+                raise Exception("语音合成失败")
+            
+            # 更新最后生成的音频 URL
+            last_audio_url = f'/audio/{audio_file}'
+            
+            # 返回音频流
+            return send_file(
+                audio_path,
+                mimetype='audio/wav' if audio_file.endswith('.wav') else 'audio/mpeg',
+                as_attachment=False,
+                download_name=audio_file
+            )
+            
+        except Exception as e:
+            print(f"音频流生成错误: {str(e)}")
+            return jsonify({'error': f'音频生成失败: {str(e)}'}), 500
 
     return app
 

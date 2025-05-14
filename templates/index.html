@@ -134,35 +134,53 @@
 
     <script>
         let currentTTS = 'gtts'; // 默认使用 gtts
+        let audioContext = null;
 
         function updateTTSInfo() {
             currentTTS = document.getElementById('ttsSelector').value;
-            console.log(`当前选择的 TTS 引擎: ${currentTTS}`); // 添加调试信息
+            console.log(`当前选择的 TTS 引擎: ${currentTTS}`);
         }
 
-        function getAudio() {
+        async function getAudio() {
             const pinyin = document.getElementById('pinyinInput').value.trim();
             if (!pinyin) return alert('请输入拼音！');
 
-            // 使用正确的文件扩展名（macsay 返回 .caf）
-            const ext = currentTTS === 'macsay' ? '.caf' : '.mp3';
-            fetch('/get_audio', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `pinyin=${encodeURIComponent(pinyin)}&tts=${encodeURIComponent(currentTTS)}`
-            })
-            .then(response => response.json())
-            .then(data => {
+            try {
+                // 创建 FormData 对象
+                const formData = new FormData();
+                formData.append('pinyin', pinyin);
+                formData.append('tts', currentTTS);
+
+                // 发送请求获取音频流
+                const response = await fetch('/stream_audio', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('音频生成失败');
+                }
+
+                // 获取音频数据
+                const audioBlob = await response.blob();
+                
+                // 创建音频 URL
+                const audioUrl = URL.createObjectURL(audioBlob);
+                
+                // 播放音频
                 const audioPlayer = document.getElementById('audioPlayer');
-                audioPlayer.src = data.audio_url;
-                audioPlayer.play();
-            })
-            .catch(error => {
+                audioPlayer.src = audioUrl;
+                await audioPlayer.play();
+
+                // 清理 URL 对象
+                audioPlayer.onended = () => {
+                    URL.revokeObjectURL(audioUrl);
+                };
+
+            } catch (error) {
                 console.error('Error:', error);
-                alert('音频加载失败，请重试。');
-            });
+                alert('音频生成失败，请重试。');
+            }
         }
 
         function playLastAudio() {
@@ -174,9 +192,7 @@
                     return;
                 }
                 const audioPlayer = document.getElementById('audioPlayer');
-                const url = data.audio_url || '';
-                // 自动识别 .caf 或 .mp3
-                audioPlayer.src = url;
+                audioPlayer.src = data.audio_url;
                 audioPlayer.play();
             })
             .catch(error => {

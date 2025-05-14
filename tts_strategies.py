@@ -9,6 +9,7 @@ import json
 import requests
 import time
 import shutil
+import re
 
 class TTSStrategy:
     """
@@ -74,6 +75,217 @@ class EdgeTTSStrategy(TTSStrategy):
             logging.error(f"Edge-TTS 合成失败: {str(e)}")
             return False
 
+def convert_to_pinyin(text):
+    """将英文单词转换为中文拼音格式"""
+    # 常见英文单词到拼音的映射
+    pinyin_map = {
+        'run': 'rùn',
+        'book': 'bù kè',
+        'hello': 'hā lóu',
+        'world': 'wò ér dé',
+        'good': 'gǔ dé',
+        'morning': 'mò níng',
+        'afternoon': 'ā fú tè nǔn',
+        'evening': 'yī wén níng',
+        'night': 'nài tè',
+        'thank': 'sān kè',
+        'you': 'yōu',
+        'welcome': 'wèi ér kè mǔ',
+        'sorry': 'sāo ruì',
+        'please': 'pǔ lì sī',
+        'yes': 'yè sī',
+        'no': 'nòu',
+        'ok': 'ōu kèi',
+        'bye': 'bài',
+        'goodbye': 'gǔ dé bài',
+        'see': 'xī',
+        'you': 'yōu',
+        'later': 'lèi tè',
+        'tomorrow': 'tè mò róu',
+        'today': 'tè déi',
+        'yesterday': 'yè sī tè déi',
+        'now': 'nào',
+        'time': 'tài mǔ',
+        'name': 'nèi mǔ',
+        'what': 'wò tè',
+        'where': 'wèi ér',
+        'when': 'wèn',
+        'why': 'wài',
+        'how': 'hào',
+        'who': 'hū',
+        'which': 'wèi qí',
+        'this': 'dì sī',
+        'that': 'dà tè',
+        'these': 'dì zī',
+        'those': 'dòu zī',
+        'here': 'hèi ér',
+        'there': 'dèi ér',
+        'come': 'kǎ mǔ',
+        'go': 'gòu',
+        'walk': 'wò kè',
+        'run': 'rùn',
+        'jump': 'zhāng pǔ',
+        'eat': 'yī tè',
+        'drink': 'zhuī kè',
+        'sleep': 'sī lì pǔ',
+        'wake': 'wèi kè',
+        'work': 'wò kè',
+        'play': 'pǔ lèi',
+        'study': 'sī dǎ dì',
+        'read': 'rì dé',
+        'write': 'rài tè',
+        'speak': 'sī pī kè',
+        'listen': 'lì sēn',
+        'watch': 'wò qí',
+        'look': 'lù kè',
+        'see': 'xī',
+        'hear': 'hèi ér',
+        'smell': 'sī mài ér',
+        'taste': 'tèi sī tè',
+        'touch': 'tǎ qí',
+        'feel': 'fī ér',
+        'think': 'sī yīng kè',
+        'know': 'nòu',
+        'understand': 'ān dé sī tǎn dé',
+        'remember': 'rì mèn bèi ér',
+        'forget': 'fò gèi tè',
+        'learn': 'lèi én',
+        'teach': 'tī qí',
+        'help': 'hài ér pǔ',
+        'need': 'nī dé',
+        'want': 'wàng tè',
+        'like': 'lài kè',
+        'love': 'lǎ wǔ',
+        'hate': 'hèi tè',
+        'hope': 'hòu pǔ',
+        'wish': 'wèi shì',
+        'dream': 'zhuī mǔ',
+        'believe': 'bì lì wǔ',
+        'trust': 'tè rǎ sī tè',
+        'doubt': 'dào tè',
+        'fear': 'fī ér',
+        'worry': 'wǎ rì',
+        'cry': 'kè rài',
+        'laugh': 'lā fū',
+        'smile': 'sī mài ér',
+        'happy': 'hā pī',
+        'sad': 'sāi dé',
+        'angry': 'ān gèi rì',
+        'tired': 'tài ér dé',
+        'hungry': 'hāng gèi rì',
+        'thirsty': 'sè sī tè rì',
+        'hot': 'hò tè',
+        'cold': 'kòu dé',
+        'warm': 'wò mǔ',
+        'cool': 'kù ér',
+        'big': 'bì gè',
+        'small': 'sī mò ér',
+        'tall': 'tò ér',
+        'short': 'shò tè',
+        'long': 'lóng',
+        'wide': 'wài dé',
+        'narrow': 'nā róu',
+        'high': 'hài',
+        'low': 'lòu',
+        'deep': 'dī pǔ',
+        'shallow': 'shā lòu',
+        'heavy': 'hāi wèi',
+        'light': 'lài tè',
+        'fast': 'fā sī tè',
+        'slow': 'sī lòu',
+        'early': 'è lì',
+        'late': 'lèi tè',
+        'new': 'niū',
+        'old': 'òu dé',
+        'young': 'yāng',
+        'beautiful': 'biū tè fū',
+        'ugly': 'ā gèi lì',
+        'good': 'gǔ dé',
+        'bad': 'bāi dé',
+        'right': 'rài tè',
+        'wrong': 'ròng',
+        'true': 'tè rū',
+        'false': 'fò ér sī',
+        'easy': 'yī zī',
+        'difficult': 'dī fī kè tè',
+        'simple': 'sī mǔ pǔ',
+        'complex': 'kāng pǔ lèi kè sī',
+        'possible': 'pò sī bō',
+        'impossible': 'yī mò pò sī bō',
+        'necessary': 'nèi sī sè rì',
+        'unnecessary': 'ān nèi sī sè rì',
+        'important': 'yī mò pò tè nèi tè',
+        'unimportant': 'ān yī mò pò tè nèi tè',
+        'interesting': 'yīn tè rèi sī tīng',
+        'boring': 'bò rīng',
+        'funny': 'fā nī',
+        'serious': 'sī rì è sī',
+        'dangerous': 'dèi zhā rèi sī',
+        'safe': 'sèi fū',
+        'clean': 'kè līn',
+        'dirty': 'dè tì',
+        'rich': 'rì qí',
+        'poor': 'pù ér',
+        'strong': 'sī zhuāng',
+        'weak': 'wī kè',
+        'hard': 'hā dé',
+        'soft': 'sò fū tè',
+        'smooth': 'sī mū sī',
+        'rough': 'rā fū',
+        'wet': 'wèi tè',
+        'dry': 'dè rài',
+        'full': 'fū ér',
+        'empty': 'āi mò pèi tì',
+        'open': 'ōu pèn',
+        'close': 'kè lòu sī',
+        'start': 'sī dā tè',
+        'stop': 'sī dò pǔ',
+        'begin': 'bì gèi yīn',
+        'end': 'ān dé',
+        'continue': 'kāng tè niū',
+        'break': 'bù rèi kè',
+        'finish': 'fī nī shì',
+        'complete': 'kāng pǔ lì tè',
+        'succeed': 'sā kè sī dé',
+        'fail': 'fèi ér',
+        'win': 'wīn',
+        'lose': 'lū zī',
+        'pass': 'pā sī',
+        'fail': 'fèi ér',
+        'try': 'tè rài',
+        'attempt': 'ā tè mò pǔ tè',
+        'succeed': 'sā kè sī dé',
+        'fail': 'fèi ér',
+        'win': 'wīn',
+        'lose': 'lū zī',
+        'pass': 'pā sī',
+        'fail': 'fèi ér',
+        'try': 'tè rài',
+        'attempt': 'ā tè mò pǔ tè'
+    }
+    
+    # 将文本转换为小写并去除空格
+    text = text.lower().strip()
+    
+    # 如果文本在映射中，返回对应的拼音
+    if text in pinyin_map:
+        return pinyin_map[text]
+    
+    # 如果文本不在映射中，尝试按字母拆分并转换
+    if text.isalpha():
+        # 将每个字母转换为对应的拼音
+        pinyin_parts = []
+        for char in text:
+            if char in pinyin_map:
+                pinyin_parts.append(pinyin_map[char])
+            else:
+                # 如果字母没有对应的拼音，保持原样
+                pinyin_parts.append(char)
+        return ' '.join(pinyin_parts)
+    
+    # 如果既不是单词也不是纯字母，返回原文本
+    return text
+
 class DockerPaddleSpeechStrategy(TTSStrategy):
     def __init__(self, container_name='paddlespeech-tts', port=8000, audio_format='wav'):
         self.name = 'paddlespeech'
@@ -134,22 +346,39 @@ class DockerPaddleSpeechStrategy(TTSStrategy):
             return await self.fallback_strategy.text_to_speech(text, lang, output_path)
             
         try:
-            # 准备请求数据
+            # 将英文单词转换为拼音
+            pinyin_text = convert_to_pinyin(text)
+            print(f"转换后的拼音: {pinyin_text}")
+            
+            # 准备请求数据，使用更简单的参数配置
             data = {
-                'text': text,
-                'lang': 'zh' if lang.startswith('zh') else 'en',
-                'am': 'fastspeech2_csmsc' if lang.startswith('zh') else 'fastspeech2_ljspeech',
-                'voc': 'hifigan_csmsc' if lang.startswith('zh') else 'hifigan_ljspeech',
-                'format': self.audio_format  # 指定音频格式
+                'text': pinyin_text,
+                'lang': 'zh',
+                'am': 'fastspeech2_csmsc',
+                'voc': 'hifigan_csmsc',
+                'spk_id': 0,
+                'speed': 1.0,
+                'volume': 1.0,
+                'sample_rate': 24000,
+                'format': self.audio_format,
+                'use_onnx': True,  # 使用 ONNX 模型
+                'use_gpu': False,  # 不使用 GPU
+                'use_phn': True,   # 使用音素
+                'use_lexicon': True  # 使用词典
             }
             
             # 发送请求到容器
             response = requests.post(
                 f'http://localhost:{self.port}/tts',
                 json=data,
+                headers={'Content-Type': 'application/json'},
                 stream=True
             )
-            response.raise_for_status()
+            
+            if response.status_code != 200:
+                error_msg = f"PaddleSpeech API 返回错误: {response.status_code} - {response.text}"
+                logging.error(error_msg)
+                raise Exception(error_msg)
             
             # 保存音频文件
             with open(output_path, 'wb') as f:
@@ -157,7 +386,13 @@ class DockerPaddleSpeechStrategy(TTSStrategy):
                     if chunk:
                         f.write(chunk)
             
+            # 验证生成的文件
+            if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+                raise Exception("生成的音频文件无效")
+                
+            print(f"成功生成音频文件: {output_path}")
             return True
+            
         except Exception as e:
             logging.error(f"PaddleSpeech Docker 合成失败: {str(e)}")
             logging.info("切换到 Edge-TTS 作为备选策略")

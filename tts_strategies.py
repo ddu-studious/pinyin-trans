@@ -71,12 +71,18 @@ class EdgeTTSStrategy(TTSStrategy):
         self.voice = voice
     
     async def text_to_speech(self, text, lang='zh-cn', output_path=None):
-        text = replace_custom_pinyin(text)
+        import traceback
         try:
-            communicate = edge_tts.Communicate(text, self.voice)
+            print(f"[EdgeTTS] 输入文本: {text}")
+            print(f"[EdgeTTS] 语音: {self.voice}, 输出路径: {output_path}")
+            # 直接传递拼音文本，提升音量参数（合法格式为+6%）
+            communicate = edge_tts.Communicate(text, self.voice, rate='-60%', volume='+20%')
             await communicate.save(output_path)
+            print(f"[EdgeTTS] 合成成功，音频已保存: {output_path}")
             return True
         except Exception as e:
+            print(f"[EdgeTTS] 合成异常: {str(e)}")
+            traceback.print_exc()
             logging.error(f"Edge-TTS 合成失败: {str(e)}")
             return False
 

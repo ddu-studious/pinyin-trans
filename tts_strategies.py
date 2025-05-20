@@ -10,6 +10,8 @@ import requests
 import time
 import shutil
 import re
+from ciku_gen.pinyin_map import get_hanzi_from_pinyin
+from ciku_gen.pinyin_map import replace_custom_pinyin
 
 class TTSStrategy:
     """
@@ -34,6 +36,7 @@ class GTTSStrategy(TTSStrategy):
         self.name = 'gtts'
     
     async def text_to_speech(self, text, lang='zh-cn', output_path=None):
+        text = replace_custom_pinyin(text)
         try:
             tts = gTTS(text=text, lang=lang)
             tts.save(output_path)
@@ -50,6 +53,7 @@ class MacSayStrategy(TTSStrategy):
         self.name = 'macsay'
     
     async def text_to_speech(self, text, lang='zh-cn', output_path=None):
+        text = replace_custom_pinyin(text)
         try:
             # 使用系统自带的 say 命令
             subprocess.run(['say', '-v', 'Ting-Ting', text, '-o', output_path], check=True)
@@ -67,6 +71,7 @@ class EdgeTTSStrategy(TTSStrategy):
         self.voice = voice
     
     async def text_to_speech(self, text, lang='zh-cn', output_path=None):
+        text = replace_custom_pinyin(text)
         try:
             communicate = edge_tts.Communicate(text, self.voice)
             await communicate.save(output_path)
@@ -297,16 +302,20 @@ class DockerPaddleSpeechStrategy(TTSStrategy):
     
     def _check_docker_installation(self):
         """检查 Docker 是否已安装"""
+        logging.info("[PaddleSpeech] 检查 docker 命令可用性...")
         if not shutil.which('docker'):
-            logging.warning("Docker 未安装，将使用 Edge-TTS 作为备选")
+            logging.warning("[PaddleSpeech] Docker 未安装或未在 PATH 中，将使用 Edge-TTS 作为备选")
             return False
+        logging.info("[PaddleSpeech] docker 命令可用")
         return True
     
     def _ensure_container_running(self):
         """确保 Docker 容器正在运行"""
+        logging.info("[PaddleSpeech] 检查并启动容器流程开始...")
         if not self._check_docker_installation():
+            logging.error("[PaddleSpeech] _check_docker_installation 返回 False")
             return False
-            
+        logging.info("[PaddleSpeech] _check_docker_installation 返回 True，继续检查容器状态...")
         try:
             # 检查容器是否存在
             result = subprocess.run(
@@ -314,9 +323,11 @@ class DockerPaddleSpeechStrategy(TTSStrategy):
                 capture_output=True,
                 text=True
             )
+            logging.info(f"[PaddleSpeech] docker ps -a 输出: {result.stdout}")
             
             if self.container_name not in result.stdout:
                 # 容器不存在，创建并启动
+                logging.info(f"[PaddleSpeech] 容器 {self.container_name} 不存在，尝试创建并启动...")
                 print(f"正在启动 PaddleSpeech Docker 容器...")
                 subprocess.run([
                     'docker', 'run', '-d',
@@ -326,33 +337,47 @@ class DockerPaddleSpeechStrategy(TTSStrategy):
                 ], check=True)
                 # 等待容器启动
                 time.sleep(10)
+                logging.info(f"[PaddleSpeech] 容器 {self.container_name} 已创建并启动，等待10秒...")
             elif 'Up' not in result.stdout:
                 # 容器存在但未运行，启动它
+                logging.info(f"[PaddleSpeech] 容器 {self.container_name} 存在但未运行，尝试启动...")
                 print(f"正在启动已存在的 PaddleSpeech 容器...")
                 subprocess.run(['docker', 'start', self.container_name], check=True)
                 time.sleep(5)
-            
+                logging.info(f"[PaddleSpeech] 容器 {self.container_name} 已启动，等待5秒...")
+            else:
+                logging.info(f"[PaddleSpeech] 容器 {self.container_name} 已经在运行状态")
             print("PaddleSpeech 容器已就绪")
+            logging.info("[PaddleSpeech] PaddleSpeech 容器已就绪")
             return True
         except Exception as e:
-            logging.error(f"Docker 容器管理失败: {str(e)}")
+            logging.error(f"[PaddleSpeech] Docker 容器管理失败: {str(e)}")
             return False
     
     async def text_to_speech(self, text, lang='zh-cn', output_path=None):
-        """异步版本的文本转语音方法"""
+        text = replace_custom_pinyin(text)
         # 如果 Docker 未安装或容器启动失败，使用备选策略
         if not self._check_docker_installation() or not self._ensure_container_running():
             logging.info("使用 Edge-TTS 作为备选策略")
+            print("[PaddleSpeech] 使用 Edge-TTS 作为备选策略")
             return await self.fallback_strategy.text_to_speech(text, lang, output_path)
-            
         try:
-            # 将英文单词转换为拼音
-            pinyin_text = convert_to_pinyin(text)
-            print(f"转换后的拼音: {pinyin_text}")
-            
-            # 准备请求数据，使用更简单的参数配置
+            hanzi = get_hanzi_from_pinyin(text)
+            log1 = f"[PaddleSpeech] 原始输入: {text}"
+            log2 = f"[PaddleSpeech] 查到的汉字: {hanzi}"
+            if hanzi and hanzi != text:
+                tts_text = hanzi
+            else:
+                tts_text = text
+            log3 = f"[PaddleSpeech] 最终送入TTS的文本: {tts_text}"
+            logging.info(log1)
+            logging.info(log2)
+            logging.info(log3)
+            print(log1)
+            print(log2)
+            print(log3)
             data = {
-                'text': pinyin_text,
+                'text': tts_text,
                 'lang': 'zh',
                 'am': 'fastspeech2_csmsc',
                 'voc': 'hifigan_csmsc',
@@ -361,41 +386,37 @@ class DockerPaddleSpeechStrategy(TTSStrategy):
                 'volume': 1.0,
                 'sample_rate': 24000,
                 'format': self.audio_format,
-                'use_onnx': True,  # 使用 ONNX 模型
-                'use_gpu': False,  # 不使用 GPU
-                'use_phn': True,   # 使用音素
-                'use_lexicon': True  # 使用词典
+                'use_onnx': True,
+                'use_gpu': False,
+                'use_phn': True,
+                'use_lexicon': True
             }
-            
-            # 发送请求到容器
             response = requests.post(
                 f'http://localhost:{self.port}/tts',
                 json=data,
                 headers={'Content-Type': 'application/json'},
                 stream=True
             )
-            
             if response.status_code != 200:
                 error_msg = f"PaddleSpeech API 返回错误: {response.status_code} - {response.text}"
                 logging.error(error_msg)
+                print(error_msg)
                 raise Exception(error_msg)
-            
-            # 保存音频文件
             with open(output_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
-            
-            # 验证生成的文件
             if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-                raise Exception("生成的音频文件无效")
-                
+                err = "生成的音频文件无效"
+                print(err)
+                raise Exception(err)
             print(f"成功生成音频文件: {output_path}")
             return True
-            
         except Exception as e:
             logging.error(f"PaddleSpeech Docker 合成失败: {str(e)}")
+            print(f"PaddleSpeech Docker 合成失败: {str(e)}")
             logging.info("切换到 Edge-TTS 作为备选策略")
+            print("切换到 Edge-TTS 作为备选策略")
             return await self.fallback_strategy.text_to_speech(text, lang, output_path)
 
 # 根据操作系统选择合适的默认策略

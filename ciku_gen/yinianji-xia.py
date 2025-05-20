@@ -1,4 +1,8 @@
 import re
+import json
+import os
+from pypinyin import pinyin, Style
+import ast
 
 def remove_pinyin_tones(pinyin_with_tones):
   """Removes tone marks from a Pinyin string."""
@@ -190,7 +194,7 @@ ocr_data_page4 = """
 近 jìn J 辶 半包围 (近日)(接近)(亲近) 近 广斤斤斤沂近7
 习 xí X 乛 独体 (学习)(自习)(习字) 习了习习3
 远 yuǎn Y L 半包围 (远方)(远近)(远古) 远 二元元远远7
-学 xué X 子 上下 (学习)(学会)(上学) 学 “兴学学学8
+学 xué X 子 上下 (学习)(学会)(上学) 学 "兴学学学8
 玉 yù Y 玉 独体 (玉米)(白玉)(玉石) 玉一二千王玉5
 义 yì Y 丶 独体 (正义)(近义)(义工) 义义3
 语文园地五
@@ -204,7 +208,7 @@ ocr_data_page5 = """
 生字 读音 音序部首 结构 组词 笔顺笔画
 首 shǒu S 首 独体 (首先)(元首)(首次) 首 **产节首首首9
 池 chí C 氵 左右 (水池)(小池)(池子) 池 池池6
-采 cǎi C 爫 上下 (采花)(风采)(文采) 采 “平采采8
+采 cǎi C 爫 上下 (采花)(风采)(文采) 采 "平采采8
 尖 jiān J 小 上下 (尖刀)(尖叫)(尖子) 尖 ا 小少尖尖6
 角 jiǎo J 角 独体 (羊角)(豆角)(牛角) 角 , 角角角7
 早 zǎo Z 日 上下 (早上)(早安)(早晨) 早 1 Π 日旦早6
@@ -371,3 +375,193 @@ else:
 
 
 print(output_string)
+
+DICT_PATH = 'pinyin_dict.json'
+
+def load_dict():
+    if not os.path.exists(DICT_PATH):
+        return {}
+    with open(DICT_PATH, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_dict(d):
+    with open(DICT_PATH, 'w', encoding='utf-8') as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+
+def get_actual_pinyin(pinyin_str, d):
+    hanzi = d.get(pinyin_str.lower())
+    if hanzi:
+        py = pinyin(hanzi, style=Style.TONE3)[0][0]
+        return hanzi, py
+    else:
+        return None, None
+
+def main():
+    d = load_dict()
+    while True:
+        pinyin_str = input('请输入拼音（q退出）：').strip().lower()
+        if pinyin_str == 'q':
+            break
+        hanzi, py = get_actual_pinyin(pinyin_str, d)
+        if hanzi:
+            print(f'拼音"{pinyin_str}"对应常用汉字"{hanzi}"，实际发音：{py}')
+        else:
+            print(f'拼音"{pinyin_str}"未收录。')
+            new_hanzi = input(f'请输入"{pinyin_str}"对应的常用汉字：').strip()
+            if new_hanzi:
+                d[pinyin_str] = new_hanzi
+                save_dict(d)
+                py = pinyin(new_hanzi, style=Style.TONE3)[0][0]
+                print(f'已添加：拼音"{pinyin_str}"→"{new_hanzi}"，实际发音：{py}')
+            else:
+                print('未输入汉字，未添加。')
+
+if __name__ == '__main__':
+    main()
+
+# === 自动同步 special_words 到 pinyin_dict.json 和 pinyin_map.py ===
+import json
+import os
+
+def get_pinyin_with_tone(hanzi):
+    from pypinyin import pinyin, Style
+    py = pinyin(hanzi, style=Style.TONE3, strict=False)
+    # 只取第一个字的拼音
+    if py and py[0]:
+        return py[0][0]
+    return ''
+
+def get_pinyin_with_tone_mark(hanzi):
+    from pypinyin import pinyin, Style
+    py = pinyin(hanzi, style=Style.TONE, strict=False)
+    if py and py[0]:
+        return py[0][0]
+    return ''
+
+def remove_pinyin_tones(pinyin_with_tones):
+    tone_map = {
+        'ā': 'a', 'á': 'a', 'ǎ': 'a', 'à': 'a',
+        'ē': 'e', 'é': 'e', 'ě': 'e', 'è': 'e',
+        'ī': 'i', 'í': 'i', 'ǐ': 'i', 'ì': 'i',
+        'ō': 'o', 'ó': 'o', 'ǒ': 'o', 'ò': 'o',
+        'ū': 'u', 'ú': 'u', 'ǔ': 'u', 'ù': 'u',
+        'ǖ': 'v', 'ǘ': 'v', 'ǚ': 'v', 'ǜ': 'v',
+        'ü': 'v'
+    }
+    return ''.join(tone_map.get(char, char) for char in pinyin_with_tones)
+
+# 1. 导出到 pinyin_dict.json
+_dict_path = os.path.join(os.path.dirname(__file__), 'pinyin_dict.json')
+with open(_dict_path, 'w', encoding='utf-8') as f:
+    json.dump(special_words, f, ensure_ascii=False, indent=2)
+print('已同步到 pinyin_dict.json')
+
+# 2. 导出到 pinyin_map.py
+_map_path = os.path.join(os.path.dirname(__file__), 'pinyin_map.py')
+with open(_map_path, 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+# 找到 special_words = { 的起始和结束
+start = None
+end = None
+for i, line in enumerate(lines):
+    if line.strip().startswith('special_words = {'):
+        start = i
+    elif start is not None and line.strip().startswith('}'):
+        end = i
+        break
+
+if start is not None and end is not None:
+    # 替换 special_words 字典内容
+    new_lines = lines[:start+1]
+    for k, v in sorted(special_words.items()):
+        new_lines.append(f"    '{k}': '{v}',\n")
+    new_lines.append('}\n')
+    new_lines += lines[end+1:]
+    lines = new_lines
+    print('已同步到 pinyin_map.py special_words')
+else:
+    print('未找到 special_words 字典，未同步 pinyin_map.py')
+
+# 3. 同步 CUSTOM_PINYIN_MAP
+# 找到 CUSTOM_PINYIN_MAP = { 的起始和结束
+start = None
+end = None
+for i, line in enumerate(lines):
+    if line.strip().startswith('CUSTOM_PINYIN_MAP = {'):
+        start = i
+    elif start is not None and line.strip().startswith('}'):
+        end = i
+        break
+
+if start is not None and end is not None:
+    # 构建 CUSTOM_PINYIN_MAP 内容
+    new_lines = lines[:start+1]
+    for k, v in sorted(special_words.items()):
+        # k: 无声调拼音，v: 汉字
+        py_tone = get_pinyin_with_tone_mark(v)
+        py_no_tone = remove_pinyin_tones(py_tone)
+        if py_no_tone and py_tone:
+            new_lines.append(f"    '{py_no_tone}': '{py_tone}',\n")
+    new_lines.append('}\n')
+    new_lines += lines[end+1:]
+    with open(_map_path, 'w', encoding='utf-8') as f:
+        f.writelines(new_lines)
+    print('已同步到 pinyin_map.py CUSTOM_PINYIN_MAP')
+else:
+    print('未找到 CUSTOM_PINYIN_MAP 字典，未同步 pinyin_map.py')
+
+# === 增量合并到 pinyin_map.py ===
+
+def load_dict_from_py(file_path, var_name):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    match = re.search(rf'{var_name}\s*=\s*{{(.*?)}}', content, re.DOTALL)
+    if not match:
+        return {}
+    dict_str = '{' + match.group(1) + '}'
+    return ast.literal_eval(dict_str)
+
+def save_dict_to_py(file_path, var_name, new_dict):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    start = end = None
+    for i, line in enumerate(lines):
+        if line.strip().startswith(f'{var_name} = {{'):
+            start = i
+        elif start is not None and line.strip().startswith('}'):
+            end = i
+            break
+    if start is not None and end is not None:
+        new_lines = lines[:start+1]
+        for k, v in sorted(new_dict.items()):
+            new_lines.append(f"    '{k}': '{v}',\n")
+        new_lines.append('}\n')
+        new_lines += lines[end+1:]
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.writelines(new_lines)
+        print(f'已合并并写回 {var_name} 到 {file_path}')
+    else:
+        print(f'未找到 {var_name}，未写回 {file_path}')
+
+# 1. 读取已有 special_words 和 CUSTOM_PINYIN_MAP
+pinyin_map_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'pinyin_map.py'))
+special_words_old = load_dict_from_py(pinyin_map_path, 'special_words')
+custom_pinyin_map_old = load_dict_from_py(pinyin_map_path, 'CUSTOM_PINYIN_MAP')
+
+# 2. 合并并去重
+special_words_merged = {**special_words_old, **special_words}  # 新的覆盖旧的
+custom_pinyin_map_merged = {**custom_pinyin_map_old}
+
+try:
+    from pypinyin import pinyin, Style
+    for py, hanzi in special_words_merged.items():
+        py_tone = pinyin(hanzi, style=Style.TONE, strict=False)[0][0]
+        custom_pinyin_map_merged[py] = py_tone
+except ImportError:
+    for py in special_words_merged:
+        custom_pinyin_map_merged[py] = py
+
+# 3. 写回 pinyin_map.py
+save_dict_to_py(pinyin_map_path, 'special_words', special_words_merged)
+save_dict_to_py(pinyin_map_path, 'CUSTOM_PINYIN_MAP', custom_pinyin_map_merged)

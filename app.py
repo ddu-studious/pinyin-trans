@@ -126,7 +126,11 @@ def create_app():
             try:
                 model_name = getattr(strategy, 'name', tts_engine)
                 print(f"正在使用 {model_name} 合成语音: '{hanzi}'")  # 添加调试信息
-                success = await strategy.text_to_speech(text=hanzi, lang='zh-cn', output_path=audio_path)
+                # 仅对 PaddleSpeech 做自动拼音替换
+                tts_input = hanzi
+                if tts_engine == 'paddlespeech':
+                    tts_input = replace_custom_pinyin(hanzi)
+                success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
                 if not success:
                     raise Exception("语音合成失败")
             except Exception as e:
@@ -185,7 +189,10 @@ def create_app():
             audio_path = os.path.join(AUDIO_DIR, audio_file)
             
             # 生成音频
-            success = await strategy.text_to_speech(text=hanzi, lang='zh-cn', output_path=audio_path)
+            tts_input = hanzi
+            if tts_engine == 'paddlespeech':
+                tts_input = replace_custom_pinyin(hanzi)
+            success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
             if not success:
                 raise Exception("语音合成失败")
             
@@ -263,7 +270,9 @@ logging.getLogger().handlers = [console_handler]
 logging.getLogger().setLevel(logging.INFO)
 
 # 导入拼音映射
-from pinyin_map import pinyin_to_hanzi
+from ciku_gen.pinyin_map import pinyin_to_hanzi
+# 导入自动替换函数
+from ciku_gen.pinyin_map import replace_custom_pinyin
 
 # 设置日志格式
 class TTSLogFormatter(logging.Formatter):

@@ -98,53 +98,44 @@ def create_app():
         global last_audio_url
         pinyin = request.form['pinyin']
         hanzi = pinyin_to_hanzi.get(pinyin, pinyin)
-        
-        # 获取用户选择的 TTS 引擎，默认为系统默认策略
         tts_engine = request.form.get('tts', default_strategy.name).lower()
-        
-        # 显式设置当前模型名称
         model_name = tts_engine if tts_engine != 'unknown' else default_strategy.name
-        
         strategy = tts_strategies.get(tts_engine, default_strategy)
-        
-        # 根据不同的 TTS 引擎选择音频格式
         if tts_engine == 'macsay':
             audio_file = f'{pinyin}.wav'
         elif tts_engine == 'edgetts':
-            audio_file = f'{pinyin}.mp3'  # Edge-TTS 默认输出 mp3
+            audio_file = f'{pinyin}.mp3'
         elif tts_engine == 'paddlespeech':
-            # 使用 PaddleSpeech 策略中设置的格式
             audio_format = getattr(strategy, 'audio_format', 'wav')
             audio_file = f'{pinyin}.{audio_format}'
         else:
-            audio_file = f'{pinyin}.mp3'  # 默认使用 mp3
-
+            audio_file = f'{pinyin}.mp3'
         audio_path = os.path.join(AUDIO_DIR, audio_file)
-
-        if not os.path.exists(audio_path):
-            # 使用策略模式生成音频
-            try:
-                model_name = getattr(strategy, 'name', tts_engine)
-                print(f"正在使用 {model_name} 合成语音: '{hanzi}'")  # 添加调试信息
-                # 仅对 PaddleSpeech 做自动拼音替换
-                tts_input = hanzi
-                if tts_engine == 'paddlespeech':
-                    tts_input = replace_custom_pinyin(hanzi)
-                success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
-                if not success:
-                    raise Exception("语音合成失败")
-            except Exception as e:
-                print(f"音频合成错误: {str(e)}")
-                return jsonify({'error': f'音频合成失败: {str(e)}'}), 500
-
+        # === 缓存逻辑：如果音频已存在直接返回 ===
+        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 0:
+            audio_url = f'/audio/{audio_file}'
+            last_audio_url = audio_url
+            model_name = getattr(strategy, 'name', tts_engine)
+            logger.info(f'缓存命中: {pinyin} -> {model_name}', extra={'model': model_name})
+            return jsonify({'audio_url': audio_url})
+        # === 生成音频 ===
+        try:
+            model_name = getattr(strategy, 'name', tts_engine)
+            print(f"正在使用 {model_name} 合成语音: '{hanzi}'")
+            tts_input = hanzi
+            if tts_engine == 'paddlespeech':
+                tts_input = replace_custom_pinyin(hanzi)
+            success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
+            if not success:
+                raise Exception("语音合成失败")
+        except Exception as e:
+            print(f"音频合成错误: {str(e)}")
+            return jsonify({'error': f'音频合成失败: {str(e)}'}), 500
         audio_url = f'/audio/{audio_file}'
         last_audio_url = audio_url
-        
-        # 记录 TTS 模型使用情况
         model_name = getattr(strategy, 'name', tts_engine)
         logger.info(f'请求生成音频: {pinyin} -> {model_name}', extra={'model': model_name})
-
-        return jsonify({'audio_url': audio_url})  # 返回 JSON 格式
+        return jsonify({'audio_url': audio_url})
 
     @app.route('/play_last_audio')
     def play_last_audio():
@@ -168,45 +159,42 @@ def create_app():
         global last_audio_url
         pinyin = request.form['pinyin']
         hanzi = pinyin_to_hanzi.get(pinyin, pinyin)
-        
-        # 获取用户选择的 TTS 引擎
         tts_engine = request.form.get('tts', default_strategy.name).lower()
         strategy = tts_strategies.get(tts_engine, default_strategy)
-        
-        try:
-            # 根据不同的 TTS 引擎选择音频格式
-            if tts_engine == 'macsay':
-                audio_file = f'{pinyin}.wav'
-            elif tts_engine == 'edgetts':
-                audio_file = f'{pinyin}.mp3'  # Edge-TTS 默认输出 mp3
-            elif tts_engine == 'paddlespeech':
-                # 使用 PaddleSpeech 策略中设置的格式
-                audio_format = getattr(strategy, 'audio_format', 'wav')
-                audio_file = f'{pinyin}.{audio_format}'
-            else:
-                audio_file = f'{pinyin}.mp3'  # 默认使用 mp3
-
-            audio_path = os.path.join(AUDIO_DIR, audio_file)
-            
-            # 生成音频
-            tts_input = hanzi
-            if tts_engine == 'paddlespeech':
-                tts_input = replace_custom_pinyin(hanzi)
-            success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
-            if not success:
-                raise Exception("语音合成失败")
-            
-            # 更新最后生成的音频 URL
+        if tts_engine == 'macsay':
+            audio_file = f'{pinyin}.wav'
+        elif tts_engine == 'edgetts':
+            audio_file = f'{pinyin}.mp3'
+        elif tts_engine == 'paddlespeech':
+            audio_format = getattr(strategy, 'audio_format', 'wav')
+            audio_file = f'{pinyin}.{audio_format}'
+        else:
+            audio_file = f'{pinyin}.mp3'
+        audio_path = os.path.join(AUDIO_DIR, audio_file)
+        # === 缓存逻辑：如果音频已存在直接返回 ===
+        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 0:
             last_audio_url = f'/audio/{audio_file}'
-            
-            # 返回音频流
             return send_file(
                 audio_path,
                 mimetype='audio/wav' if audio_file.endswith('.wav') else 'audio/mpeg',
                 as_attachment=False,
                 download_name=audio_file
             )
-            
+        # === 生成音频 ===
+        tts_input = hanzi
+        if tts_engine == 'paddlespeech':
+            tts_input = replace_custom_pinyin(hanzi)
+        try:
+            success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
+            if not success:
+                raise Exception("语音合成失败")
+            last_audio_url = f'/audio/{audio_file}'
+            return send_file(
+                audio_path,
+                mimetype='audio/wav' if audio_file.endswith('.wav') else 'audio/mpeg',
+                as_attachment=False,
+                download_name=audio_file
+            )
         except Exception as e:
             print(f"音频流生成错误: {str(e)}")
             return jsonify({'error': f'音频生成失败: {str(e)}'}), 500

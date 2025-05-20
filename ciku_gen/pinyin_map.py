@@ -33,54 +33,41 @@ initials = {
 # 韵母映射（按拼音标准顺序排列）
 finals = {
     # 单韵母
-    'a': '啊',
-    'o': '哦',
-    'e': '饿',
-    'i': '一',
-    'u': '乌',
-    'v': '愚',
+    'a': 'ā',
+    'o': 'ō',
+    'e': 'ē',
+    'i': 'ī',
+    'u': 'ū',
+    'v': 'ǖ',
 
     # 复韵母
-    'ai': '挨',
-    'ei': '诶',
-    'ui': '威',
-    'ao': '奥',
-    'ou': '欧',
-    'iu': '优',
-    'ie': '也',
-    've': '约',
+    'ai': 'āi',
+    'ei': 'ēi',
+    'ui': 'ūi',
+    'ao': 'āo',
+    'ou': 'ōu',
+    'iu': 'īu',
+    'ie': 'īe',
+    've': 'ǖe',
 
     # 鼻韵母
-    'an': '安',
-    'en': '恩',
-    'in': '因',
-    'un': '温',
-    'vn': '晕',  # 实际中写作 ün
+    'an': 'ān',
+    'en': 'ēn',
+    'in': 'īn',
+    'un': 'ūn',
+    'vn': 'ǖn',  # 实际中写作 ün
+    'ün': 'ǖn',
 
-    'ang': '昂',
-    'eng': '鞥',
-    'ing': '英',
-    'ong': '翁',
+    'ang': 'āng',
+    'eng': 'ēng',
+    'ing': 'īng',
+    'ong': 'ōng',
 
     # 特殊韵母
-    'er': '儿',
+    'er': 'ēr',
 
     # 带 i 的组合
-    'ia': '呀',
-    'ian': '烟',
-    'iang': '央',
-    'iao': '要',
-    'iong': '拥',
-    'iu': '优',
-
-    # 带 u 的组合
-    'ua': '蛙',
-    'uai': '歪',
-    'uan': '弯',
-    'uang': '王',
-    'ue': '约',
-    'uo': '窝',
-    'van': '冤',
+    'iu': 'īu',
 }
 
 # 整体认读音节
@@ -577,43 +564,30 @@ def get_hanzi_from_pinyin(pinyin_str):
     # 4. 没找到，返回原拼音
     return pinyin_str
 
+def has_valid_pinyin_value(pinyin):
+    """
+    只检查 whole_readings、special_words、CUSTOM_PINYIN_MAP 是否有有效 value。
+    声母和韵母单独出现不算有效拼音。
+    """
+    for d in [initials, finals, whole_readings, special_words, CUSTOM_PINYIN_MAP]:
+        v = d.get(pinyin)
+        if v:
+            return True
+    return False
+
 def is_valid_pinyin_combination(initial, final):
     """
-    校验声母和韵母组合是否合法。
-    :param initial: 声母（如 'x'）
-    :param final: 韵母（如 'ai'）
-    :return: True 合法，False 非法
+    校验声母和韵母组合是否合法，且有有效 value。
     """
-    # 合法拼音组合表（部分，常用，后续可扩展）
-    # 这里只做基础校验，详细规则可参考《汉语拼音方案》
-    # 1. 声母为空时，韵母必须能独立成音节
-    # 2. 某些声母不能和某些韵母组合（如 x 不能和 ai 组合）
-    # 3. zh/ch/sh/z/c/s/r/y/w 组合有特殊规则
-    
-    # 允许的声母
-    valid_initials = set(initials.keys()) | {''}
-    # 允许的韵母
-    valid_finals = set(finals.keys())
-    
-    # 1. 检查声母和韵母是否存在
-    if initial not in valid_initials or final not in valid_finals:
+    if not initial and final in finals and finals[final]:
+        return True
+    if initial in initials and final in finals:
+        combined = initial + final
+        # 检查 whole_readings、special_words、initials、finals
+        for d in [whole_readings, special_words, initials, finals, CUSTOM_PINYIN_MAP]:
+            v = d.get(combined)
+            if v:
+                return True
+        # 也允许 initial+final 直接有 value
         return False
-    
-    # 2. 特殊非法组合
-    # x 不能和 ai/ei/ao/ou/ia/ua 等组合
-    if initial == 'x' and final in {'ai', 'ei', 'ao', 'ou', 'ia', 'ua', 'uai', 'uo'}:
-        return False
-    # j/q/x 不能和 u 开头的韵母（除去 ü/üe/üan/ün）
-    if initial in {'j', 'q', 'x'} and final.startswith('u') and not final.startswith('ü'):
-        return False
-    # zh/ch/sh/r/z/c/s 不能和 iou/ia/ie/iu/ian/iong/ing/ü 等组合
-    if initial in {'zh', 'ch', 'sh', 'r', 'z', 'c', 's'} and final.startswith(('i', 'ü')):
-        if final not in {'i', 'in', 'ing'}:
-            return False
-    # y/w 只能和特定韵母组合
-    if initial == 'y' and final not in {'i', 'in', 'ing', 'u', 'un', 'ue', 'uan', 'uan', 'ü', 'ün', 'ing', 'i', 'ia', 'ie', 'iao', 'ian', 'iong', 'in', 'iang', 'iong', 'u', 'ue', 'uan', 'ün'}:
-        return False
-    if initial == 'w' and final not in {'u', 'ua', 'uo', 'uai', 'ui', 'un', 'uan', 'uang'}:
-        return False
-    # 其他组合可根据需要继续补充
-    return True
+    return False

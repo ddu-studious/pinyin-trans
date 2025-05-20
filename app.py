@@ -4,6 +4,7 @@ import platform
 import logging
 import pwd  # 获取当前用户信息
 import asyncio
+from ciku_gen.pinyin_map import has_valid_pinyin_value
 
 # 全局定义音频目录
 AUDIO_DIR = 'static/audio'
@@ -89,6 +90,13 @@ def create_app():
     # 记录上一次生成的音频文件
     last_audio_url = None
 
+    # 特殊韵母自动映射
+    special_pinyin_map = {
+        'i': 'yi',
+        'u': 'wu',
+        'v': 'yu',
+    }
+
     @app.route('/')
     def index():
         return render_template('index.html')
@@ -98,6 +106,9 @@ def create_app():
         global last_audio_url
         pinyin = request.form['pinyin']
         hanzi = pinyin_to_hanzi.get(pinyin, pinyin)
+        # === 拼音有效性校验 ===
+        if not has_valid_pinyin_value(pinyin):
+            return jsonify({'error': f'拼音"{pinyin}"无有效发音映射，请输入完整拼音音节或检查词库。'}), 400
         tts_engine = request.form.get('tts', default_strategy.name).lower()
         model_name = tts_engine if tts_engine != 'unknown' else default_strategy.name
         strategy = tts_strategies.get(tts_engine, default_strategy)
@@ -122,9 +133,10 @@ def create_app():
         try:
             model_name = getattr(strategy, 'name', tts_engine)
             print(f"正在使用 {model_name} 合成语音: '{hanzi}'")
-            tts_input = hanzi
+            # 特殊韵母自动映射
+            tts_input = special_pinyin_map.get(pinyin, hanzi)
             if tts_engine == 'paddlespeech':
-                tts_input = replace_custom_pinyin(hanzi)
+                tts_input = replace_custom_pinyin(tts_input)
             success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
             if not success:
                 raise Exception("语音合成失败")
@@ -159,6 +171,9 @@ def create_app():
         global last_audio_url
         pinyin = request.form['pinyin']
         hanzi = pinyin_to_hanzi.get(pinyin, pinyin)
+        # === 拼音有效性校验 ===
+        if not has_valid_pinyin_value(pinyin):
+            return jsonify({'error': f'拼音"{pinyin}"无有效发音映射，请输入完整拼音音节或检查词库。'}), 400
         tts_engine = request.form.get('tts', default_strategy.name).lower()
         strategy = tts_strategies.get(tts_engine, default_strategy)
         if tts_engine == 'macsay':
@@ -181,9 +196,10 @@ def create_app():
                 download_name=audio_file
             )
         # === 生成音频 ===
-        tts_input = hanzi
+        # 特殊韵母自动映射
+        tts_input = special_pinyin_map.get(pinyin, hanzi)
         if tts_engine == 'paddlespeech':
-            tts_input = replace_custom_pinyin(hanzi)
+            tts_input = replace_custom_pinyin(tts_input)
         try:
             success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
             if not success:

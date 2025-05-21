@@ -70,7 +70,8 @@ def create_app():
         tts_strategies = {
             'gtts': GTTSStrategy(),
             'macsay': MacSayStrategy(),
-            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural'),
+            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural', rate='-60%', volume='+20%'),
+            'edgetts_normal': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural', rate='-30%', volume='+50%'),
             'paddlespeech': DockerPaddleSpeechStrategy(audio_format='wav')  # 默认使用 wav 格式
         }
         
@@ -202,6 +203,52 @@ def create_app():
             tts_input = replace_custom_pinyin(tts_input)
         try:
             success = await strategy.text_to_speech(text=tts_input, lang='zh-cn', output_path=audio_path)
+            if not success:
+                raise Exception("语音合成失败")
+            last_audio_url = f'/audio/{audio_file}'
+            return send_file(
+                audio_path,
+                mimetype='audio/wav' if audio_file.endswith('.wav') else 'audio/mpeg',
+                as_attachment=False,
+                download_name=audio_file
+            )
+        except Exception as e:
+            print(f"音频流生成错误: {str(e)}")
+            return jsonify({'error': f'音频生成失败: {str(e)}'}), 500
+
+    @app.route('/stream_chinese_audio', methods=['POST'])
+    async def stream_chinese_audio():
+        global last_audio_url
+        text = request.form['text']  # 接收中文文本
+        tts_engine = request.form.get('tts', default_strategy.name).lower()
+        strategy = tts_strategies.get(tts_engine+'_normal', default_strategy)
+
+        # 根据不同引擎设置音频文件格式
+        if tts_engine == 'macsay':
+            audio_format = 'wav'
+        elif tts_engine == 'paddlespeech':
+            audio_format = getattr(strategy, 'audio_format', 'wav')
+        else:
+            audio_format = 'mp3'
+
+        # 使用文本的前10个字符（如果不足10个字符则使用全部）作为文件名
+        text_prefix = text[:10]
+        audio_file = f'{text_prefix}_{tts_engine}.{audio_format}'
+        audio_path = os.path.join(AUDIO_DIR, audio_file)
+
+        # === 缓存逻辑：如果音频已存在直接返回 ===
+        if os.path.exists(audio_path) and os.path.getsize(audio_path) > 0:
+            last_audio_url = f'/audio/{audio_file}'
+            return send_file(
+                audio_path,
+                mimetype='audio/wav' if audio_file.endswith('.wav') else 'audio/mpeg',
+                as_attachment=False,
+                download_name=audio_file
+            )
+
+        # === 生成音频 ===
+        try:
+            success = await strategy.text_to_speech(text=text, lang='zh-cn', output_path=audio_path)
             if not success:
                 raise Exception("语音合成失败")
             last_audio_url = f'/audio/{audio_file}'

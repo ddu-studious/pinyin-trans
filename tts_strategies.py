@@ -66,9 +66,11 @@ class EdgeTTSStrategy(TTSStrategy):
     """
     使用 Microsoft Edge TTS 的策略实现
     """
-    def __init__(self, voice='zh-CN-XiaoxiaoNeural'):
+    def __init__(self, voice='zh-CN-XiaoxiaoNeural', rate='-60%', volume='+20%'):
         self.name = 'edgetts'
         self.voice = voice
+        self.rate = rate
+        self.volume = volume
     
     async def text_to_speech(self, text, lang='zh-cn', output_path=None):
         import traceback
@@ -76,7 +78,7 @@ class EdgeTTSStrategy(TTSStrategy):
             print(f"[EdgeTTS] 输入文本: {text}")
             print(f"[EdgeTTS] 语音: {self.voice}, 输出路径: {output_path}")
             # 直接传递拼音文本，提升音量参数（合法格式为+6%）
-            communicate = edge_tts.Communicate(text, self.voice, rate='-60%', volume='+20%')
+            communicate = edge_tts.Communicate(text, self.voice, rate=self.rate, volume=self.volume)
             await communicate.save(output_path)
             print(f"[EdgeTTS] 合成成功，音频已保存: {output_path}")
             return True

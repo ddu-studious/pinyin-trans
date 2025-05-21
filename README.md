@@ -30,3 +30,7 @@ pip install paddlespeech  # 安装PaddleSpeech库
 - 或者在请求时设置verify=False（不推荐用于生产环境）
 
 // ... existing content ...
+
+
+// 测试语音合成
+curl -X POST -F "text=继续加油哦！" -F "tts=edgetts" http://localhost:5000/stream_chinese_audio

@@ -71,7 +71,7 @@ def create_app():
             'gtts': GTTSStrategy(),
             'macsay': MacSayStrategy(),
             'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural', rate='-60%', volume='+20%'),
-            'edgetts_normal': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural', rate='-30%', volume='+50%'),
+            'edgetts_normal': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural', rate='+10%', volume='+50%'),
             'paddlespeech': DockerPaddleSpeechStrategy(audio_format='wav')  # 默认使用 wav 格式
         }
         
@@ -84,7 +84,8 @@ def create_app():
         tts_strategies = {
             'gtts': GTTSStrategy(),
             'macsay': MacSayStrategy(),
-            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural')
+            'edgetts': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural'),
+            'edgetts_normal': EdgeTTSStrategy(voice='zh-CN-XiaoxiaoNeural', rate='+10%', volume='+50%')
         }
         default_strategy = GTTSStrategy()
 

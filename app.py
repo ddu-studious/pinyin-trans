@@ -173,6 +173,7 @@ def create_app():
         global last_audio_url
         pinyin = request.form['pinyin']
         hanzi = pinyin_to_hanzi.get(pinyin, pinyin)
+        print(f"pinyin: {pinyin}, hanzi: {hanzi}")
         # === 拼音有效性校验 ===
         if not has_valid_pinyin_value(pinyin):
             return jsonify({'error': f'拼音"{pinyin}"无有效发音映射，请输入完整拼音音节或检查词库。'}), 400
